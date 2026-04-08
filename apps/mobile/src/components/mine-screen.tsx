@@ -7,11 +7,40 @@ import { fontScaleOptions, useUIPreferences } from '../hooks/use-ui-preferences'
 import { hasAIConfig } from '../lib/ai-config'
 import { colors, radii, spacing } from '../theme/tokens'
 
-export function MineScreen() {
+type SettingsSheetType = 'category' | 'tag' | 'import' | 'ai' | null
+
+export function MineScreen({
+  categories,
+  tags,
+  addCategory,
+  removeCategory,
+  addTag,
+  removeTag,
+  importBills,
+}: {
+  categories: string[]
+  tags: string[]
+  addCategory: (name: string) => Promise<void>
+  removeCategory: (name: string) => Promise<void>
+  addTag: (name: string) => Promise<void>
+  removeTag: (name: string) => Promise<void>
+  importBills: (inputs: Array<{
+    amount: number
+    category: string
+    note: string
+    type: 'income' | 'expense'
+    tags?: string[]
+    occurredAt?: string
+  }>) => Promise<void>
+}) {
   const { config, updateConfig } = useAIConfig()
   const { fontScaleKey, setFontScaleKey, typography } = useUIPreferences()
-  const [configVisible, setConfigVisible] = useState(false)
+  const [activeSheet, setActiveSheet] = useState<SettingsSheetType>(null)
   const [draft, setDraft] = useState(config)
+  const [newCategory, setNewCategory] = useState('')
+  const [newTag, setNewTag] = useState('')
+  const [importText, setImportText] = useState('')
+  const [importStatus, setImportStatus] = useState('')
   const [isTesting, setIsTesting] = useState(false)
   const [testStatus, setTestStatus] = useState<string>('')
 
@@ -20,12 +49,93 @@ export function MineScreen() {
   function openAIConfig() {
     setDraft(config)
     setTestStatus('')
-    setConfigVisible(true)
+    setActiveSheet('ai')
+  }
+
+  function openCategorySheet() {
+    setNewCategory('')
+    setActiveSheet('category')
+  }
+
+  function openTagSheet() {
+    setNewTag('')
+    setActiveSheet('tag')
+  }
+
+  function openImportSheet() {
+    setImportStatus('')
+    setActiveSheet('import')
+  }
+
+  function parseImportRows(input: string) {
+    return input
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((line, index) => {
+        const parts = line.split(',').map((item) => item.trim())
+        if (parts.length < 4) {
+          throw new Error(`第 ${index + 1} 行格式不对，至少需要：日期,类型,分类,金额`)
+        }
+
+        const [occurredAt, typeText, category, amountText, note = '', tagsText = ''] = parts
+        const type: 'income' | 'expense' = typeText === '收入' || typeText === 'income' ? 'income' : 'expense'
+        const amount = Number(amountText)
+
+        if (!category || Number.isNaN(amount)) {
+          throw new Error(`第 ${index + 1} 行缺少有效分类或金额`)
+        }
+
+        return {
+          occurredAt: occurredAt.includes('T') ? occurredAt : `${occurredAt}T12:00:00.000Z`,
+          type,
+          category,
+          amount: Math.abs(amount),
+          note,
+          tags: tagsText ? tagsText.split('|').map((item) => item.trim()).filter(Boolean) : [],
+        }
+      })
+  }
+
+  async function handleImportBills() {
+    if (!importText.trim()) {
+      setImportStatus('先粘贴要导入的账单内容。')
+      return
+    }
+
+    try {
+      const rows = parseImportRows(importText)
+      await importBills(rows)
+      await Promise.all(rows.map((row) => addCategory(row.category)))
+      await Promise.all(rows.flatMap((row) => row.tags ?? []).map((tag) => addTag(tag)))
+      setImportStatus(`已导入 ${rows.length} 笔账单。`)
+      setImportText('')
+    } catch (error) {
+      setImportStatus(error instanceof Error ? error.message : '导入失败，请检查格式。')
+    }
+  }
+
+  async function handleAddCategory() {
+    if (!newCategory.trim()) {
+      return
+    }
+
+    await addCategory(newCategory)
+    setNewCategory('')
+  }
+
+  async function handleAddTag() {
+    if (!newTag.trim()) {
+      return
+    }
+
+    await addTag(newTag)
+    setNewTag('')
   }
 
   async function handleSave() {
     await updateConfig(draft)
-    setConfigVisible(false)
+    setActiveSheet(null)
   }
 
   async function handleTestConnection() {
@@ -88,10 +198,22 @@ export function MineScreen() {
               <Pressable
                 key={item}
                 style={[styles.menuItem, index !== settingsItems.length - 1 && styles.menuBorder]}
-                onPress={isAI ? openAIConfig : undefined}
+                onPress={
+                  item === '分类管理'
+                    ? openCategorySheet
+                    : item === '标签管理'
+                      ? openTagSheet
+                      : item === '导入账单'
+                        ? openImportSheet
+                        : isAI
+                          ? openAIConfig
+                          : undefined
+                }
               >
                 <View style={styles.menuContent}>
                   <Text style={[styles.menuText, typography.cardTitle]}>{item}</Text>
+                  {item === '分类管理' ? <Text style={[styles.menuHint, typography.footnote]}>当前 {categories.length} 个分类</Text> : null}
+                  {item === '标签管理' ? <Text style={[styles.menuHint, typography.footnote]}>当前 {tags.length} 个标签</Text> : null}
                   {isAI ? <Text style={[styles.menuHint, typography.footnote]}>{enabled ? config.model || config.baseURL : '填写 API Key、Base URL、模型名'}</Text> : null}
                 </View>
                 <Text style={styles.menuArrow}>›</Text>
@@ -101,9 +223,110 @@ export function MineScreen() {
         </View>
       </ScrollView>
 
-      <Modal visible={configVisible} transparent animationType="slide" onRequestClose={() => setConfigVisible(false)}>
+      <Modal visible={activeSheet === 'category'} transparent animationType="slide" onRequestClose={() => setActiveSheet(null)}>
         <View style={styles.overlay}>
-          <Pressable style={StyleSheet.absoluteFill} onPress={() => setConfigVisible(false)} />
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => setActiveSheet(null)} />
+          <View style={styles.sheet}>
+            <View style={styles.handle} />
+            <Text style={[styles.sheetTitle, typography.title]}>分类管理</Text>
+            <Text style={[styles.sheetSubtitle, typography.body]}>补常用分类，主记账面板会同步使用。</Text>
+            <TextInput
+              placeholder="新增分类，比如：零食"
+              placeholderTextColor="#94A3B8"
+              style={[styles.input, typography.body]}
+              value={newCategory}
+              onChangeText={setNewCategory}
+            />
+            <View style={styles.tagList}>
+              {categories.map((item) => (
+                <View key={item} style={styles.tagChipRow}>
+                  <Text style={[styles.tagChipLabel, typography.captionStrong]}>{item}</Text>
+                  <Pressable onPress={() => void removeCategory(item)}>
+                    <Text style={[styles.tagChipAction, typography.footnote]}>删除</Text>
+                  </Pressable>
+                </View>
+              ))}
+            </View>
+            <View style={styles.sheetActions}>
+              <Pressable style={styles.secondaryButton} onPress={() => setActiveSheet(null)}>
+                <Text style={[styles.secondaryButtonText, typography.captionStrong]}>关闭</Text>
+              </Pressable>
+              <Pressable style={styles.confirmButton} onPress={() => void handleAddCategory()}>
+                <Text style={[styles.confirmText, typography.captionStrong]}>新增分类</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal visible={activeSheet === 'tag'} transparent animationType="slide" onRequestClose={() => setActiveSheet(null)}>
+        <View style={styles.overlay}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => setActiveSheet(null)} />
+          <View style={styles.sheet}>
+            <View style={styles.handle} />
+            <Text style={[styles.sheetTitle, typography.title]}>标签管理</Text>
+            <Text style={[styles.sheetSubtitle, typography.body]}>先维护常用标签，后续统计会继续用到。</Text>
+            <TextInput
+              placeholder="新增标签，比如：出差"
+              placeholderTextColor="#94A3B8"
+              style={[styles.input, typography.body]}
+              value={newTag}
+              onChangeText={setNewTag}
+            />
+            <View style={styles.tagList}>
+              {tags.map((item) => (
+                <View key={item} style={styles.tagChipRow}>
+                  <Text style={[styles.tagChipLabel, typography.captionStrong]}>#{item}</Text>
+                  <Pressable onPress={() => void removeTag(item)}>
+                    <Text style={[styles.tagChipAction, typography.footnote]}>删除</Text>
+                  </Pressable>
+                </View>
+              ))}
+            </View>
+            <View style={styles.sheetActions}>
+              <Pressable style={styles.secondaryButton} onPress={() => setActiveSheet(null)}>
+                <Text style={[styles.secondaryButtonText, typography.captionStrong]}>关闭</Text>
+              </Pressable>
+              <Pressable style={styles.confirmButton} onPress={() => void handleAddTag()}>
+                <Text style={[styles.confirmText, typography.captionStrong]}>新增标签</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal visible={activeSheet === 'import'} transparent animationType="slide" onRequestClose={() => setActiveSheet(null)}>
+        <View style={styles.overlay}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => setActiveSheet(null)} />
+          <View style={styles.sheet}>
+            <View style={styles.handle} />
+            <Text style={[styles.sheetTitle, typography.title]}>导入账单</Text>
+            <Text style={[styles.sheetSubtitle, typography.body]}>按行粘贴 CSV：日期,类型,分类,金额,备注,标签1|标签2</Text>
+            <TextInput
+              placeholder={"2026-04-01,expense,餐饮,18,午饭,通勤|工作日\n2026-04-02,income,工资,5000,4月工资,"}
+              placeholderTextColor="#94A3B8"
+              style={[styles.input, styles.importInput, typography.body]}
+              value={importText}
+              onChangeText={setImportText}
+              multiline
+              textAlignVertical="top"
+            />
+            {importStatus ? <Text style={[styles.statusText, typography.caption]}>{importStatus}</Text> : null}
+            <View style={styles.sheetActions}>
+              <Pressable style={styles.secondaryButton} onPress={() => setActiveSheet(null)}>
+                <Text style={[styles.secondaryButtonText, typography.captionStrong]}>关闭</Text>
+              </Pressable>
+              <Pressable style={styles.confirmButton} onPress={() => void handleImportBills()}>
+                <Text style={[styles.confirmText, typography.captionStrong]}>开始导入</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal visible={activeSheet === 'ai'} transparent animationType="slide" onRequestClose={() => setActiveSheet(null)}>
+        <View style={styles.overlay}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => setActiveSheet(null)} />
           <View style={styles.sheet}>
             <View style={styles.handle} />
             <Text style={[styles.sheetTitle, typography.title]}>AI 配置</Text>
@@ -135,7 +358,7 @@ export function MineScreen() {
             />
             {testStatus ? <Text style={[styles.statusText, typography.caption]}>{testStatus}</Text> : null}
             <View style={styles.sheetActions}>
-              <Pressable style={styles.secondaryButton} onPress={() => setConfigVisible(false)}>
+              <Pressable style={styles.secondaryButton} onPress={() => setActiveSheet(null)}>
                 <Text style={[styles.secondaryButtonText, typography.captionStrong]}>取消</Text>
               </Pressable>
               <Pressable style={styles.secondaryButton} onPress={() => void handleTestConnection()}>
@@ -252,9 +475,35 @@ const styles = StyleSheet.create({
     borderColor: colors.cardBorder,
     color: colors.textPrimary,
   },
+  importInput: {
+    minHeight: 160,
+  },
   statusText: {
     marginTop: 12,
     color: colors.textSecondary,
+  },
+  tagList: {
+    marginTop: 16,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  tagChipRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: radii.pill,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
+  },
+  tagChipLabel: {
+    color: colors.textPrimary,
+  },
+  tagChipAction: {
+    color: colors.accent,
   },
   sheetActions: {
     marginTop: 20,

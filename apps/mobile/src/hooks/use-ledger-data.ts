@@ -9,6 +9,7 @@ type DayGroupItem = {
   amount: number
   time: string
   tags: string[]
+  source: Bill['source']
 }
 
 type DayGroup = {
@@ -29,8 +30,13 @@ type MonthSummary = {
 type AnalyticsSummary = {
   headline: string
   insight: string
-  topCategories: string
+  income: number
+  expense: number
+  balance: number
+  overview: string
   trend: string
+  hottestTag: string | null
+  topCategories: Array<{ name: string; amount: number; share: number }>
 }
 
 type GoalSummary = {
@@ -54,6 +60,23 @@ type SaveBillInput = {
   tags?: string[]
   occurredAt?: string
   source?: Bill['source']
+}
+
+type ImportBillInput = {
+  amount: number
+  category: string
+  note: string
+  type: 'income' | 'expense'
+  tags?: string[]
+  occurredAt?: string
+}
+
+type QuickComposerPreset = {
+  category: string
+  tags: string[]
+  note: string
+  amount: number
+  type: 'income' | 'expense'
 }
 
 const weekdayFormatter = new Intl.DateTimeFormat('zh-CN', { weekday: 'short' })
@@ -109,6 +132,7 @@ function groupBillsByDay(bills: Bill[]): DayGroup[] {
           amount: item.type === 'income' ? item.amount : -item.amount,
           time: item.occurredAt.slice(11, 16),
           tags: item.tagIds,
+          source: item.source,
         })),
     }
   })
@@ -147,18 +171,14 @@ function buildAnalyticsSummary(monthBills: Bill[], previousMonthBills: Bill[]): 
     .sort((left, right) => right[1] - left[1])
     .slice(0, 3)
 
-  const categoryText = topCategories.length
-    ? topCategories
-        .map(([name, amount]) => `${name} ${Math.round((amount / Math.max(current.expense, 1)) * 100)}%`)
-        .join(' · ')
-    : '本月还没有支出分类数据'
-
   const hottestTag = [...tagTotals.entries()].sort((left, right) => right[1] - left[1])[0]?.[0]
   const recentExpenses = monthBills.filter((bill) => bill.type === 'expense').slice(0, 7)
   const weekendCount = recentExpenses.filter((bill) => {
     const day = new Date(bill.occurredAt).getDay()
     return day === 0 || day === 6
   }).length
+  const manualCount = monthBills.filter((bill) => bill.source === 'manual').length
+  const aiCount = monthBills.filter((bill) => bill.source === 'chat').length
 
   return {
     headline: previous.expense
@@ -167,10 +187,19 @@ function buildAnalyticsSummary(monthBills: Bill[], previousMonthBills: Bill[]): 
     insight: hottestTag
       ? `本月支出 ${current.expense.toFixed(0)} 元，标签“${hottestTag}”热度最高。`
       : `本月已记录收入 ${current.income.toFixed(0)} 元，支出 ${current.expense.toFixed(0)} 元。`,
-    topCategories: categoryText,
+    income: current.income,
+    expense: current.expense,
+    balance: current.balance,
+    overview: `本月共记 ${monthBills.length} 笔，手动 ${manualCount} 笔，AI 识别 ${aiCount} 笔。`,
     trend: weekendCount >= Math.ceil(recentExpenses.length / 2)
       ? '最近 7 笔支出更多出现在周末，外出和休闲消费更集中。'
       : '最近 7 笔支出主要落在工作日，消费节奏较平稳。',
+    hottestTag: hottestTag ?? null,
+    topCategories: topCategories.map(([name, amount]) => ({
+      name,
+      amount,
+      share: Math.round((amount / Math.max(current.expense, 1)) * 100),
+    })),
   }
 }
 
@@ -242,6 +271,22 @@ export function useLedgerData() {
     return balances.reduce((sum, item) => sum + item, 0) / balances.length
   }, [bills])
   const goals = useMemo(() => buildGoalSummaries(monthBills, averageBalance), [averageBalance, monthBills])
+  const recentCategoryChoices = useMemo(() => [...new Set(bills.map((bill) => bill.categoryId))].slice(0, 4), [bills])
+  const recentTagChoices = useMemo(() => [...new Set(bills.flatMap((bill) => bill.tagIds))].slice(0, 6), [bills])
+  const latestBillPreset = useMemo<QuickComposerPreset | null>(() => {
+    const latest = bills[0]
+    if (!latest) {
+      return null
+    }
+
+    return {
+      category: latest.categoryId,
+      tags: latest.tagIds,
+      note: latest.note,
+      amount: latest.amount,
+      type: latest.type,
+    }
+  }, [bills])
 
   const addManualBill = useCallback(async (input: SaveBillInput) => {
     const occurredAt = input.occurredAt ?? new Date().toISOString()
@@ -258,6 +303,22 @@ export function useLedgerData() {
     await refresh()
   }, [refresh])
 
+  const importBills = useCallback(async (inputs: ImportBillInput[]) => {
+    const nextBills = inputs.map((input, index) => ({
+      id: `import-${Date.now()}-${index}`,
+      type: input.type,
+      amount: input.amount,
+      categoryId: input.category,
+      tagIds: input.tags ?? [],
+      note: input.note,
+      occurredAt: input.occurredAt ?? new Date().toISOString(),
+      source: 'import' as const,
+    }))
+
+    await repository.createMany(nextBills)
+    await refresh()
+  }, [refresh])
+
   return {
     bills,
     groups,
@@ -266,7 +327,11 @@ export function useLedgerData() {
     analytics,
     goals: goals.goals,
     goalSuggestion: goals.suggestion,
+    recentCategoryChoices,
+    recentTagChoices,
+    latestBillPreset,
     addManualBill,
+    importBills,
     refresh,
   }
 }

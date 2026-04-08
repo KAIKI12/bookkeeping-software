@@ -17,6 +17,8 @@ type LedgerGroup = {
     note: string
     amount: number
     time: string
+    tags: string[]
+    source: 'manual' | 'voice' | 'chat' | 'import'
   }>
 }
 

@@ -92,6 +92,13 @@ export const repository = {
     return bill
   },
 
+  async createMany(nextBills: Bill[]) {
+    const bills = await loadBills()
+    bills.push(...nextBills)
+    await saveBills(bills)
+    return nextBills
+  },
+
   async listRecent() {
     const bills = await loadBills()
     return [...bills].sort((left, right) => right.occurredAt.localeCompare(left.occurredAt))

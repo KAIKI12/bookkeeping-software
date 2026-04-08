@@ -7,17 +7,19 @@ import { LedgerScreen } from '../src/components/ledger-screen'
 import { MineScreen } from '../src/components/mine-screen'
 import { TabBar } from '../src/components/tab-bar'
 import { useAIConfig } from '../src/hooks/use-ai-config'
+import { useLedgerSettings } from '../src/hooks/use-ledger-settings'
 import { UIPreferencesProvider } from '../src/hooks/use-ui-preferences'
 import { useLedgerData } from '../src/hooks/use-ledger-data'
 import { colors } from '../src/theme/tokens'
 
 type TabKey = 'ledger' | 'analytics' | 'goals' | 'mine'
 
-export default function App() {
+function AppShell() {
   const [activeTab, setActiveTab] = useState<TabKey>('ledger')
   const [composerVisible, setComposerVisible] = useState(false)
   const ledger = useLedgerData()
   const { config: aiConfig } = useAIConfig()
+  const ledgerSettings = useLedgerSettings()
 
   const content = useMemo(() => {
     switch (activeTab) {
@@ -26,32 +28,45 @@ export default function App() {
       case 'goals':
         return <GoalsScreen goals={ledger.goals} suggestion={ledger.goalSuggestion} />
       case 'mine':
-        return <MineScreen />
+        return <MineScreen {...ledgerSettings} importBills={ledger.importBills} />
       case 'ledger':
       default:
         return <LedgerScreen summary={ledger.summary} groups={ledger.groups} />
     }
-  }, [activeTab, ledger.analytics, ledger.goalSuggestion, ledger.goals, ledger.groups, ledger.summary])
+  }, [activeTab, ledger.analytics, ledger.goalSuggestion, ledger.goals, ledger.groups, ledger.summary, ledgerSettings])
 
   return (
+    <SafeAreaView style={styles.safeArea}>
+      <StatusBar barStyle="dark-content" />
+      <View style={styles.backgroundGlowTop} />
+      <View style={styles.backgroundGlowBottom} />
+      <View style={styles.container}>{content}</View>
+      <TabBar
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
+        onOpenComposer={() => setComposerVisible(true)}
+      />
+      <ComposerSheet
+        visible={composerVisible}
+        onClose={() => setComposerVisible(false)}
+        onSubmit={ledger.addManualBill}
+        aiConfig={aiConfig}
+        categories={ledgerSettings.categories}
+        tags={ledgerSettings.tags}
+        addCategory={ledgerSettings.addCategory}
+        addTag={ledgerSettings.addTag}
+        recentCategories={ledger.recentCategoryChoices}
+        recentTags={ledger.recentTagChoices}
+        latestPreset={ledger.latestBillPreset}
+      />
+    </SafeAreaView>
+  )
+}
+
+export default function App() {
+  return (
     <UIPreferencesProvider>
-      <SafeAreaView style={styles.safeArea}>
-        <StatusBar barStyle="dark-content" />
-        <View style={styles.backgroundGlowTop} />
-        <View style={styles.backgroundGlowBottom} />
-        <View style={styles.container}>{content}</View>
-        <TabBar
-          activeTab={activeTab}
-          onTabChange={setActiveTab}
-          onOpenComposer={() => setComposerVisible(true)}
-        />
-        <ComposerSheet
-          visible={composerVisible}
-          onClose={() => setComposerVisible(false)}
-          onSubmit={ledger.addManualBill}
-          aiConfig={aiConfig}
-        />
-      </SafeAreaView>
+      <AppShell />
     </UIPreferencesProvider>
   )
 }

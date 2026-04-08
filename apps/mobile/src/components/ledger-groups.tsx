@@ -15,22 +15,35 @@ type LedgerGroup = {
     note: string
     amount: number
     time: string
+    tags: string[]
+    source: 'manual' | 'voice' | 'chat' | 'import'
   }>
 }
 
 function formatDateLabel(date: string) {
-  const today = new Date().toISOString().slice(0, 10)
   const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
-
-  if (date === today) {
-    return '今天'
-  }
 
   if (date === yesterday) {
     return '昨天'
   }
 
   return date.slice(5).replace('-', '/')
+}
+
+function formatSourceLabel(source: 'manual' | 'voice' | 'chat' | 'import') {
+  if (source === 'chat') {
+    return 'AI'
+  }
+
+  if (source === 'voice') {
+    return '语音'
+  }
+
+  if (source === 'import') {
+    return '导入'
+  }
+
+  return '手动'
 }
 
 export function LedgerGroups({ groups }: { groups: LedgerGroup[] }) {
@@ -56,12 +69,21 @@ export function LedgerGroups({ groups }: { groups: LedgerGroup[] }) {
               <View style={styles.itemLeft}>
                 <Text style={[styles.category, typography.cardTitle]} numberOfLines={1}>{item.category}</Text>
                 <Text style={[styles.note, typography.caption]} numberOfLines={2}>{item.note}</Text>
+                {item.tags.length ? (
+                  <View style={styles.tagRow}>
+                    {item.tags.slice(0, 2).map((tag) => (
+                      <View key={tag} style={styles.tagChip}>
+                        <Text style={[styles.tagText, typography.footnote]}>#{tag}</Text>
+                      </View>
+                    ))}
+                  </View>
+                ) : null}
               </View>
               <View style={styles.itemRight}>
                 <Text style={[styles.amount, typography.cardTitle, item.amount > 0 && styles.amountIncome]}>
                   {item.amount > 0 ? '+' : '-'}¥{Math.abs(item.amount)}
                 </Text>
-                <Text style={[styles.time, typography.footnote]}>{item.time}</Text>
+                <Text style={[styles.time, typography.footnote]}>{item.time} · {formatSourceLabel(item.source)}</Text>
               </View>
             </View>
           ))}
@@ -134,6 +156,21 @@ const styles = StyleSheet.create({
   },
   note: {
     color: colors.textSecondary,
+  },
+  tagRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginTop: 4,
+  },
+  tagChip: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: radii.pill,
+    backgroundColor: colors.accentSoft,
+  },
+  tagText: {
+    color: colors.accent,
   },
   itemRight: {
     alignItems: 'flex-end',
