@@ -1,0 +1,9 @@
+node_modules
+.pnpm-store
+.expo
+.next
+dist
+coverage
+*.log
+.env
+.env.*

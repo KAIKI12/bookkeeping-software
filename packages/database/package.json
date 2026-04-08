@@ -1,0 +1,14 @@
+{
+  "name": "@bookkeeping/database",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run --passWithNoTests",
+    "typecheck": "tsc --noEmit",
+    "lint": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@bookkeeping/core": "workspace:*"
+  }
+}

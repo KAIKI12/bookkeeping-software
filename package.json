@@ -1,0 +1,16 @@
+{
+  "name": "bookkeeping-software",
+  "private": true,
+  "packageManager": "pnpm@10.8.1",
+  "scripts": {
+    "test": "corepack pnpm -r test",
+    "typecheck": "corepack pnpm -r typecheck",
+    "lint": "corepack pnpm -r lint"
+  },
+  "devDependencies": {
+    "drizzle-orm": "^0.44.2",
+    "typescript": "^5.8.3",
+    "vitest": "^3.1.1",
+    "zod": "^3.24.4"
+  }
+}

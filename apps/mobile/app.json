@@ -1,0 +1,11 @@
+{
+  "expo": {
+    "name": "智能记账",
+    "slug": "smart-ledger",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "platforms": ["ios", "android", "web"],
+    "assetBundlePatterns": ["**/*"]
+  }
+}

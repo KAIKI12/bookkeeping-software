@@ -1,0 +1,23 @@
+{
+  "name": "@bookkeeping/mobile",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run --passWithNoTests",
+    "typecheck": "tsc --noEmit",
+    "lint": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@react-native-async-storage/async-storage": "2.2.0",
+    "@expo/metro-runtime": "~6.1.2",
+    "expo": "~54.0.33",
+    "react": "19.1.0",
+    "react-dom": "19.1.0",
+    "react-native": "0.81.5",
+    "react-native-web": "~0.21.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.10"
+  }
+}
