@@ -17,23 +17,76 @@ type TabKey = 'ledger' | 'analytics' | 'goals' | 'mine'
 function AppShell() {
   const [activeTab, setActiveTab] = useState<TabKey>('ledger')
   const [composerVisible, setComposerVisible] = useState(false)
+  const [ledgerDateFilter, setLedgerDateFilter] = useState<string | null>(null)
   const ledger = useLedgerData()
   const { config: aiConfig } = useAIConfig()
   const ledgerSettings = useLedgerSettings()
 
+  const filteredLedgerGroups = useMemo(() => {
+    if (!ledgerDateFilter) {
+      return ledger.groups
+    }
+
+    if (ledgerDateFilter.length === 7) {
+      return ledger.groups.filter((group) => group.date.startsWith(ledgerDateFilter))
+    }
+
+    return ledger.groups.filter((group) => group.date === ledgerDateFilter)
+  }, [ledger.groups, ledgerDateFilter])
+
+  const filteredLedgerSummary = useMemo(() => {
+    return filteredLedgerGroups.reduce(
+      (accumulator, group) => ({
+        income: accumulator.income + group.income,
+        expense: accumulator.expense + group.expense,
+        balance: accumulator.income + group.income - (accumulator.expense + group.expense),
+      }),
+      { income: 0, expense: 0, balance: 0 },
+    )
+  }, [filteredLedgerGroups])
+
+  const ledgerMonthLabel = ledgerDateFilter?.length === 7 ? `${ledgerDateFilter.replace('-', '年')}月` : null
+  const ledgerDayLabel = ledgerDateFilter?.length === 10 ? ledgerDateFilter.replace(/^([0-9]{4})-([0-9]{2})-([0-9]{2})$/, '$1年$2月$3日') : null
+
   const content = useMemo(() => {
     switch (activeTab) {
       case 'analytics':
-        return <AnalyticsScreen analytics={ledger.analytics} />
+        return (
+          <AnalyticsScreen
+            analytics={ledger.analytics}
+            onOpenLedger={(date) => {
+              setLedgerDateFilter(date ? date : ledger.analytics.month.label.replace('年', '-').replace('月', ''))
+              setActiveTab('ledger')
+            }}
+          />
+        )
       case 'goals':
-        return <GoalsScreen goals={ledger.goals} suggestion={ledger.goalSuggestion} />
+        return (
+          <GoalsScreen
+            goals={ledger.goals}
+            suggestion={ledger.goalSuggestion}
+            addGoal={ledger.addGoal}
+            updateGoal={ledger.updateGoal}
+            removeGoal={ledger.removeGoal}
+          />
+        )
       case 'mine':
         return <MineScreen {...ledgerSettings} importBills={ledger.importBills} />
       case 'ledger':
       default:
-        return <LedgerScreen summary={ledger.summary} groups={ledger.groups} />
+        return <LedgerScreen summary={filteredLedgerSummary} groups={filteredLedgerGroups} monthLabel={ledgerMonthLabel} dayLabel={ledgerDayLabel} />
     }
-  }, [activeTab, ledger.analytics, ledger.goalSuggestion, ledger.goals, ledger.groups, ledger.summary, ledgerSettings])
+  }, [
+    activeTab,
+    filteredLedgerGroups,
+    filteredLedgerSummary,
+    ledger.analytics,
+    ledger.goalSuggestion,
+    ledger.goals,
+    ledgerMonthLabel,
+    ledgerDayLabel,
+    ledgerSettings,
+  ])
 
   return (
     <SafeAreaView style={styles.safeArea}>

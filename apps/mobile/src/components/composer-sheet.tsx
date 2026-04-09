@@ -74,7 +74,9 @@ export function ComposerSheet({
   const [draftParser, setDraftParser] = useState<'rule' | 'ai' | null>(null)
   const [selectedTags, setSelectedTags] = useState<string[]>([])
   const [newCategory, setNewCategory] = useState('')
+  const [newTag, setNewTag] = useState('')
   const [isAddingCategory, setIsAddingCategory] = useState(false)
+  const [isAddingTag, setIsAddingTag] = useState(false)
 
   const displayAmount = useMemo(() => {
     const numeric = Number(amount || 0)
@@ -118,7 +120,9 @@ export function ComposerSheet({
     setSelectedCategory(categories[0] ?? '餐饮')
     setSelectedTags([])
     setNewCategory('')
+    setNewTag('')
     setIsAddingCategory(false)
+    setIsAddingTag(false)
     setNote('')
     setTextInput('')
     setDraft(null)
@@ -161,6 +165,18 @@ export function ComposerSheet({
     setSelectedCategory(normalized)
     setNewCategory('')
     setIsAddingCategory(false)
+  }
+
+  async function handleCreateTag() {
+    const normalized = newTag.trim()
+    if (!normalized) {
+      return
+    }
+
+    await addTag(normalized)
+    setSelectedTags((current) => current.includes(normalized) ? current : [...current, normalized])
+    setNewTag('')
+    setIsAddingTag(false)
   }
 
   function applyLatestPreset() {
@@ -287,9 +303,12 @@ export function ComposerSheet({
                 style={[styles.inlineInput, typography.body]}
                 value={newCategory}
                 onChangeText={setNewCategory}
+                returnKeyType="done"
+                onSubmitEditing={() => void handleCreateCategory()}
+                blurOnSubmit={false}
               />
               <Pressable style={styles.inlineAction} onPress={() => void handleCreateCategory()}>
-                <Text style={[styles.inlineActionText, typography.captionStrong]}>保存</Text>
+                <Text style={[styles.inlineActionText, typography.captionStrong]}>添加</Text>
               </Pressable>
             </View>
           ) : null}
@@ -311,7 +330,29 @@ export function ComposerSheet({
             </View>
           ) : null}
 
-          <Text style={[styles.aiTitle, typography.cardTitle]}>最近常用标签</Text>
+          <View style={styles.sectionHeader}>
+            <Text style={[styles.aiTitle, typography.cardTitle]}>最近常用标签</Text>
+            <Pressable onPress={() => setIsAddingTag((current) => !current)}>
+              <Text style={[styles.sectionLink, typography.captionStrong]}>{isAddingTag ? '收起' : '+ 新增'}</Text>
+            </Pressable>
+          </View>
+          {isAddingTag ? (
+            <View style={styles.inlineCreateRow}>
+              <TextInput
+                placeholder="输入新标签"
+                placeholderTextColor="#94A3B8"
+                style={[styles.inlineInput, typography.body]}
+                value={newTag}
+                onChangeText={setNewTag}
+                returnKeyType="done"
+                onSubmitEditing={() => void handleCreateTag()}
+                blurOnSubmit={false}
+              />
+              <Pressable style={styles.inlineAction} onPress={() => void handleCreateTag()}>
+                <Text style={[styles.inlineActionText, typography.captionStrong]}>添加</Text>
+              </Pressable>
+            </View>
+          ) : null}
           {quickTags.length ? (
             <View style={styles.quickRow}>
               {quickTags.slice(0, 6).map((tag) => {

@@ -25,16 +25,21 @@ type LedgerGroup = {
 export function LedgerScreen({
   summary,
   groups,
+  monthLabel,
+  dayLabel,
 }: {
   summary: { income: number; expense: number; balance: number }
   groups: LedgerGroup[]
+  monthLabel?: string | null
+  dayLabel?: string | null
 }) {
   const { typography } = useUIPreferences()
+  const subtitle = dayLabel ? `${dayLabel}流水` : monthLabel ? `${monthLabel}流水` : '今天也把钱流向看清楚'
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
       <Text style={[styles.title, typography.hero]}>记账</Text>
-      <Text style={[styles.subtitle, typography.body]}>今天也把钱流向看清楚</Text>
+      <Text style={[styles.subtitle, typography.body]}>{subtitle}</Text>
       <SummaryCard summary={summary} />
       <LedgerGroups groups={groups} />
     </ScrollView>

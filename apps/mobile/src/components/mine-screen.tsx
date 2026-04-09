@@ -9,6 +9,15 @@ import { colors, radii, spacing } from '../theme/tokens'
 
 type SettingsSheetType = 'category' | 'tag' | 'import' | 'ai' | null
 
+type ParsedImportRow = {
+  amount: number
+  category: string
+  note: string
+  type: 'income' | 'expense'
+  tags?: string[]
+  occurredAt?: string
+}
+
 export function MineScreen({
   categories,
   tags,
@@ -41,6 +50,7 @@ export function MineScreen({
   const [newTag, setNewTag] = useState('')
   const [importText, setImportText] = useState('')
   const [importStatus, setImportStatus] = useState('')
+  const [isImporting, setIsImporting] = useState(false)
   const [isTesting, setIsTesting] = useState(false)
   const [testStatus, setTestStatus] = useState<string>('')
 
@@ -68,33 +78,56 @@ export function MineScreen({
   }
 
   function parseImportRows(input: string) {
-    return input
+    const rows: ParsedImportRow[] = []
+    const errors: string[] = []
+
+    input
       .split(/\r?\n/)
       .map((line) => line.trim())
       .filter(Boolean)
-      .map((line, index) => {
+      .forEach((line, index) => {
         const parts = line.split(',').map((item) => item.trim())
         if (parts.length < 4) {
-          throw new Error(`第 ${index + 1} 行格式不对，至少需要：日期,类型,分类,金额`)
+          errors.push(`第 ${index + 1} 行格式不对，至少需要：日期,类型,分类,金额`)
+          return
         }
 
         const [occurredAt, typeText, category, amountText, note = '', tagsText = ''] = parts
-        const type: 'income' | 'expense' = typeText === '收入' || typeText === 'income' ? 'income' : 'expense'
+        const normalizedType = typeText.toLowerCase()
+        const type: 'income' | 'expense' = normalizedType === '收入' || normalizedType === 'income' ? 'income' : normalizedType === '支出' || normalizedType === 'expense' ? 'expense' : 'expense'
         const amount = Number(amountText)
 
-        if (!category || Number.isNaN(amount)) {
-          throw new Error(`第 ${index + 1} 行缺少有效分类或金额`)
+        if (!occurredAt) {
+          errors.push(`第 ${index + 1} 行缺少日期`)
+          return
         }
 
-        return {
+        if (!category) {
+          errors.push(`第 ${index + 1} 行缺少分类`)
+          return
+        }
+
+        if (Number.isNaN(amount)) {
+          errors.push(`第 ${index + 1} 行金额不是有效数字`)
+          return
+        }
+
+        if (!['收入', '支出', 'income', 'expense'].includes(normalizedType)) {
+          errors.push(`第 ${index + 1} 行类型只能是 收入/支出/income/expense`)
+          return
+        }
+
+        rows.push({
           occurredAt: occurredAt.includes('T') ? occurredAt : `${occurredAt}T12:00:00.000Z`,
           type,
           category,
           amount: Math.abs(amount),
           note,
           tags: tagsText ? tagsText.split('|').map((item) => item.trim()).filter(Boolean) : [],
-        }
+        })
       })
+
+    return { rows, errors }
   }
 
   async function handleImportBills() {
@@ -104,14 +137,25 @@ export function MineScreen({
     }
 
     try {
-      const rows = parseImportRows(importText)
+      setIsImporting(true)
+      const { rows, errors } = parseImportRows(importText)
+
+      if (errors.length) {
+        setImportStatus(`发现 ${errors.length} 处问题：\n${errors.slice(0, 5).join('\n')}${errors.length > 5 ? '\n……' : ''}`)
+        return
+      }
+
+      const uniqueCategories = [...new Set(rows.map((row) => row.category))]
+      const uniqueTags = [...new Set(rows.flatMap((row) => row.tags ?? []))]
       await importBills(rows)
-      await Promise.all(rows.map((row) => addCategory(row.category)))
-      await Promise.all(rows.flatMap((row) => row.tags ?? []).map((tag) => addTag(tag)))
-      setImportStatus(`已导入 ${rows.length} 笔账单。`)
+      await Promise.all(uniqueCategories.map((category) => addCategory(category)))
+      await Promise.all(uniqueTags.map((tag) => addTag(tag)))
+      setImportStatus(`已导入 ${rows.length} 笔账单，新增 ${uniqueCategories.length} 个分类、${uniqueTags.length} 个标签。`)
       setImportText('')
     } catch (error) {
       setImportStatus(error instanceof Error ? error.message : '导入失败，请检查格式。')
+    } finally {
+      setIsImporting(false)
     }
   }
 
@@ -236,6 +280,9 @@ export function MineScreen({
               style={[styles.input, typography.body]}
               value={newCategory}
               onChangeText={setNewCategory}
+              returnKeyType="done"
+              onSubmitEditing={() => void handleAddCategory()}
+              blurOnSubmit={false}
             />
             <View style={styles.tagList}>
               {categories.map((item) => (
@@ -252,7 +299,7 @@ export function MineScreen({
                 <Text style={[styles.secondaryButtonText, typography.captionStrong]}>关闭</Text>
               </Pressable>
               <Pressable style={styles.confirmButton} onPress={() => void handleAddCategory()}>
-                <Text style={[styles.confirmText, typography.captionStrong]}>新增分类</Text>
+                <Text style={[styles.confirmText, typography.captionStrong]}>添加</Text>
               </Pressable>
             </View>
           </View>
@@ -272,6 +319,9 @@ export function MineScreen({
               style={[styles.input, typography.body]}
               value={newTag}
               onChangeText={setNewTag}
+              returnKeyType="done"
+              onSubmitEditing={() => void handleAddTag()}
+              blurOnSubmit={false}
             />
             <View style={styles.tagList}>
               {tags.map((item) => (
@@ -288,7 +338,7 @@ export function MineScreen({
                 <Text style={[styles.secondaryButtonText, typography.captionStrong]}>关闭</Text>
               </Pressable>
               <Pressable style={styles.confirmButton} onPress={() => void handleAddTag()}>
-                <Text style={[styles.confirmText, typography.captionStrong]}>新增标签</Text>
+                <Text style={[styles.confirmText, typography.captionStrong]}>添加</Text>
               </Pressable>
             </View>
           </View>
@@ -310,14 +360,15 @@ export function MineScreen({
               onChangeText={setImportText}
               multiline
               textAlignVertical="top"
+              editable={!isImporting}
             />
             {importStatus ? <Text style={[styles.statusText, typography.caption]}>{importStatus}</Text> : null}
             <View style={styles.sheetActions}>
-              <Pressable style={styles.secondaryButton} onPress={() => setActiveSheet(null)}>
+              <Pressable style={styles.secondaryButton} onPress={() => setActiveSheet(null)} disabled={isImporting}>
                 <Text style={[styles.secondaryButtonText, typography.captionStrong]}>关闭</Text>
               </Pressable>
-              <Pressable style={styles.confirmButton} onPress={() => void handleImportBills()}>
-                <Text style={[styles.confirmText, typography.captionStrong]}>开始导入</Text>
+              <Pressable style={[styles.confirmButton, isImporting && styles.buttonDisabled]} onPress={() => void handleImportBills()} disabled={isImporting}>
+                {isImporting ? <ActivityIndicator color="#FFFFFF" /> : <Text style={[styles.confirmText, typography.captionStrong]}>开始导入</Text>}
               </Pressable>
             </View>
           </View>
@@ -530,6 +581,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 14,
     borderRadius: radii.pill,
+    minWidth: 100,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  buttonDisabled: {
+    opacity: 0.72,
   },
   confirmText: {
     color: '#FFFFFF',

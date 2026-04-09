@@ -1,7 +1,15 @@
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import type { Bill } from '../../../../packages/core/src/models'
 
+export type StoredGoal = {
+  id: string
+  name: string
+  target: number
+  createdAt: string
+}
+
 const LEDGER_STORAGE_KEY = 'bookkeeping.ledger.bills'
+const GOALS_STORAGE_KEY = 'bookkeeping.ledger.goals'
 
 const seedBills: Bill[] = [
   {
@@ -84,6 +92,24 @@ async function saveBills(bills: Bill[]) {
   await AsyncStorage.setItem(LEDGER_STORAGE_KEY, JSON.stringify(bills))
 }
 
+async function loadGoals(): Promise<StoredGoal[]> {
+  const raw = await AsyncStorage.getItem(GOALS_STORAGE_KEY)
+  if (!raw) {
+    return []
+  }
+
+  try {
+    const parsed = JSON.parse(raw) as StoredGoal[]
+    return Array.isArray(parsed) ? parsed : []
+  } catch {
+    return []
+  }
+}
+
+async function saveGoals(goals: StoredGoal[]) {
+  await AsyncStorage.setItem(GOALS_STORAGE_KEY, JSON.stringify(goals))
+}
+
 export const repository = {
   async create(bill: Bill) {
     const bills = await loadBills()
@@ -107,6 +133,38 @@ export const repository = {
   async listByMonth(month: string) {
     const bills = await loadBills()
     return bills.filter((bill) => bill.occurredAt.startsWith(month))
+  },
+
+  async listGoals() {
+    const goals = await loadGoals()
+    return [...goals].sort((left, right) => left.createdAt.localeCompare(right.createdAt))
+  },
+
+  async createGoal(goal: StoredGoal) {
+    const goals = await loadGoals()
+    goals.push(goal)
+    await saveGoals(goals)
+    return goal
+  },
+
+  async updateGoal(goalId: string, updates: Pick<StoredGoal, 'name' | 'target'>) {
+    const goals = await loadGoals()
+    const nextGoals = goals.map((goal) =>
+      goal.id === goalId
+        ? {
+            ...goal,
+            ...updates,
+          }
+        : goal,
+    )
+    await saveGoals(nextGoals)
+    return nextGoals.find((goal) => goal.id === goalId) ?? null
+  },
+
+  async removeGoal(goalId: string) {
+    const goals = await loadGoals()
+    const nextGoals = goals.filter((goal) => goal.id !== goalId)
+    await saveGoals(nextGoals)
   },
 }
 
