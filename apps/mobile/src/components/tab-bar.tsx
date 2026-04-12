@@ -6,10 +6,10 @@ import { colors, radii, shadows, spacing } from '../theme/tokens'
 type TabKey = 'ledger' | 'analytics' | 'goals' | 'mine'
 
 const tabs: { key: TabKey; label: string; icon: string }[] = [
-  { key: 'ledger', label: '记账', icon: '⌂' },
-  { key: 'analytics', label: '统计', icon: '◔' },
-  { key: 'goals', label: '目标', icon: '◉' },
-  { key: 'mine', label: '我的', icon: '☻' },
+  { key: 'ledger', label: '记账', icon: '☰' },
+  { key: 'analytics', label: '统计', icon: '◎' },
+  { key: 'goals', label: '目标', icon: '◈' },
+  { key: 'mine', label: '我的', icon: '⚙' },
 ]
 
 export function TabBar({ activeTab, onTabChange, onOpenComposer }: {
@@ -80,17 +80,17 @@ const styles = StyleSheet.create({
     width: 84,
   },
   icon: {
-    fontSize: 18,
+    fontSize: 20,
     color: '#94A3B8',
   },
   iconActive: {
-    color: colors.textPrimary,
+    color: colors.accent,
   },
   label: {
     color: '#94A3B8',
   },
   labelActive: {
-    color: colors.textPrimary,
+    color: colors.accent,
     fontWeight: '600',
   },
   fab: {

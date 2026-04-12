@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react'
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
+import { Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native'
 import { useUIPreferences } from '../hooks/use-ui-preferences'
 import { colors, radii, spacing } from '../theme/tokens'
 
@@ -53,6 +53,23 @@ type AnalyticsPayload = {
   }
 }
 
+type DayGroup = {
+  key: string
+  date: string
+  weekday: string
+  income: number
+  expense: number
+  items: Array<{
+    id: string
+    category: string
+    note: string
+    amount: number
+    time: string
+    tags: string[]
+    source: 'manual' | 'voice' | 'chat' | 'import'
+  }>
+}
+
 type SegmentKey = 'overview' | 'month' | 'year' | 'calendar'
 
 const segments: Array<{ key: SegmentKey; label: string }> = [
@@ -62,15 +79,41 @@ const segments: Array<{ key: SegmentKey; label: string }> = [
   { key: 'calendar', label: '日历' },
 ]
 
-const weekLabels = ['一', '二', '三', '四', '五', '六', '日']
+const weekLabels = ['日', '一', '二', '三', '四', '五', '六']
+const calendarColumnWidth = '14.2857%'
 
 function getCalendarLeadingSlots(date: string) {
-  const day = new Date(`${date}T00:00:00`).getDay()
-  return day === 0 ? 6 : day - 1
+  return new Date(`${date}T00:00:00`).getDay()
 }
 
 function formatMoney(value: number) {
   return `¥${value.toFixed(0)}`
+}
+
+function formatPreciseMoney(value: number) {
+  return `¥${value.toFixed(2)}`
+}
+
+function formatCalendarSummaryDate(date: string) {
+  const [year, month, day] = date.split('-').map(Number)
+  return `${month}月${day}日`
+}
+
+function getMonthKeyFromDate(date: Date) {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  return `${year}-${month}`
+}
+
+function shiftMonth(monthKey: string, delta: number) {
+  const [year, month] = monthKey.split('-').map(Number)
+  const date = new Date(year, month - 1 + delta, 1)
+  return getMonthKeyFromDate(date)
+}
+
+function getMonthLabel(monthKey: string) {
+  const [year, month] = monthKey.split('-').map(Number)
+  return `${year}年${month}月`
 }
 
 function renderTopList({
@@ -114,14 +157,16 @@ function renderTopList({
 function renderHighlightStrip({
   items,
   typography,
+  compact,
 }: {
   items: Array<{ label: string; value: string }>
   typography: ReturnType<typeof useUIPreferences>['typography']
+  compact: boolean
 }) {
   return (
-    <View style={styles.highlightStrip}>
+    <View style={[styles.highlightStrip, compact && styles.highlightStripCompact]}>
       {items.map((item) => (
-        <View key={item.label} style={styles.highlightItem}>
+        <View key={item.label} style={[styles.highlightItem, compact && styles.highlightItemCompact]}>
           <Text style={[styles.highlightValue, typography.bodyStrong]}>{item.value}</Text>
           <Text style={[styles.highlightLabel, typography.footnote]}>{item.label}</Text>
         </View>
@@ -132,67 +177,104 @@ function renderHighlightStrip({
 
 export function AnalyticsScreen({
   analytics,
-  onOpenLedger,
+  dayGroups,
+  viewMonth,
+  onViewMonthChange,
 }: {
   analytics: AnalyticsPayload
-  onOpenLedger: (date: string | null) => void
+  dayGroups: DayGroup[]
+  viewMonth: string
+  onViewMonthChange: (monthKey: string) => void
 }) {
   const { typography } = useUIPreferences()
+  const { width } = useWindowDimensions()
+  const isCompactWidth = width < 390
   const [activeSegment, setActiveSegment] = useState<SegmentKey>('overview')
   const [selectedCalendarDate, setSelectedCalendarDate] = useState<string | null>(null)
+
+  const isCurrentMonth = viewMonth === getMonthKeyFromDate(new Date())
+
+  function goToPreviousMonth() {
+    onViewMonthChange(shiftMonth(viewMonth, -1))
+    setSelectedCalendarDate(null)
+  }
+
+  function goToNextMonth() {
+    if (isCurrentMonth) return
+    onViewMonthChange(shiftMonth(viewMonth, 1))
+    setSelectedCalendarDate(null)
+  }
 
   const hero = useMemo(() => {
     switch (activeSegment) {
       case 'month':
         return {
-          title: `${analytics.month.label}统计`,
-          description: analytics.month.comparison,
+          title: analytics.month.label,
+          description: analytics.month.highestExpenseDay.replace(/。$/, ''),
           summary: analytics.month.summary,
         }
       case 'year':
         return {
-          title: `${analytics.year.label}收支总览`,
-          description: analytics.year.busiestMonth,
+          title: analytics.year.label,
+          description: '按月份看清收入、支出和结余变化',
           summary: analytics.year.summary,
         }
       case 'calendar':
         return {
-          title: analytics.calendar.label,
-          description: analytics.calendar.highestExpenseDay,
-          summary: analytics.overview.summary,
+          title: analytics.month.label,
+          description: '日历即账本，选一天就看当天流水',
+          summary: analytics.month.summary,
         }
       case 'overview':
       default:
         return {
-          title: analytics.overview.headline,
+          title: analytics.overview.monthLabel,
           description: analytics.overview.insight,
           summary: analytics.overview.summary,
         }
     }
   }, [activeSegment, analytics])
 
+  const selectedDayGroup = useMemo(
+    () => dayGroups.find((group) => group.date === selectedCalendarDate) ?? null,
+    [dayGroups, selectedCalendarDate],
+  )
+
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
       <Text style={[styles.title, typography.hero]}>统计</Text>
       <Text style={[styles.subtitle, typography.body]}>总览优先，再看趋势和结构</Text>
-      <View style={styles.hero}>
-        <Text style={[styles.heroTitle, typography.sectionTitle]}>{hero.title}</Text>
-        <Text style={[styles.heroText, typography.body]}>{hero.description}</Text>
+
+      <View style={styles.monthNav}>
+        <Pressable style={[styles.monthNavButton]} onPress={goToPreviousMonth}>
+          <Text style={[styles.monthNavArrow, typography.cardTitle]}>&lsaquo;</Text>
+        </Pressable>
+        <Text style={[styles.monthNavLabel, typography.sectionTitle]}>{getMonthLabel(viewMonth)}</Text>
+        <Pressable style={[styles.monthNavButton, isCurrentMonth && styles.monthNavButtonDisabled]} onPress={goToNextMonth} disabled={isCurrentMonth}>
+          <Text style={[styles.monthNavArrow, typography.cardTitle, isCurrentMonth && styles.monthNavArrowDisabled]}>&rsaquo;</Text>
+        </Pressable>
       </View>
+
+      <View style={styles.heroCompact}>
+        <Text style={[styles.heroCompactLabel, typography.caption]}>{hero.title}</Text>
+        <Text style={[styles.heroCompactText, typography.body]}>{hero.description}</Text>
+      </View>
+
       <View style={styles.metricRow}>
         <View style={styles.metricCard}>
           <Text style={[styles.metricLabel, typography.caption]}>收入</Text>
-          <Text style={[styles.metricValue, typography.cardTitle]}>{formatMoney(hero.summary.income)}</Text>
+          <Text style={[styles.metricValue, typography.cardTitle, styles.metricIncome]}>{formatMoney(hero.summary.income)}</Text>
         </View>
         <View style={styles.metricCard}>
           <Text style={[styles.metricLabel, typography.caption]}>支出</Text>
-          <Text style={[styles.metricValue, typography.cardTitle]}>{formatMoney(hero.summary.expense)}</Text>
+          <Text style={[styles.metricValue, typography.cardTitle, styles.metricExpense]}>{formatMoney(hero.summary.expense)}</Text>
         </View>
         <View style={styles.metricCard}>
           <Text style={[styles.metricLabel, typography.caption]}>结余</Text>
           <Text style={[styles.metricValue, typography.cardTitle]}>{formatMoney(hero.summary.balance)}</Text>
         </View>
       </View>
+
       <View style={styles.segmentWrap}>
         {segments.map((item) => {
           const active = item.key === activeSegment
@@ -212,6 +294,7 @@ export function AnalyticsScreen({
               ...analytics.overview.sourceSummary,
             ],
             typography,
+            compact: isCompactWidth,
           })}
           {renderTopList({
             title: '分类占比',
@@ -225,42 +308,31 @@ export function AnalyticsScreen({
             items: analytics.overview.topTags,
             typography,
           })}
-          <View style={styles.card}>
-            <Text style={[styles.cardTitle, typography.cardTitle]}>记录概览</Text>
-            <Text style={[styles.cardBody, typography.body]}>{analytics.overview.overview}</Text>
-            <Text style={[styles.cardBodySecondary, typography.body]}>{analytics.overview.highestExpenseDay}</Text>
-            <Text style={[styles.cardBodySecondary, typography.body]}>{analytics.overview.hottestTag ? `当前最热标签：#${analytics.overview.hottestTag}` : '当前还没有形成明显标签偏好'}</Text>
-          </View>
-          <View style={styles.card}>
-            <Text style={[styles.cardTitle, typography.cardTitle]}>近期趋势</Text>
-            <Text style={[styles.cardBody, typography.body]}>{analytics.overview.trend}</Text>
-          </View>
         </>
       ) : null}
 
       {activeSegment === 'month' ? (
         <>
-          {renderHighlightStrip({ items: analytics.month.highlights, typography })}
+          {renderHighlightStrip({ items: analytics.month.highlights, typography, compact: isCompactWidth })}
           <View style={styles.card}>
             <View style={styles.listHeader}>
               <Text style={[styles.cardTitle, typography.cardTitle]}>月度重点</Text>
               <Text style={[styles.listHeaderHint, typography.footnote]}>{analytics.month.label}</Text>
             </View>
-            <View style={styles.monthHighlightRow}>
+            <View style={[styles.monthHighlightRow, isCompactWidth && styles.monthHighlightRowCompact]}>
               <View style={styles.monthHighlightItem}>
                 <Text style={[styles.monthHighlightLabel, typography.footnote]}>本月结余</Text>
                 <Text style={[styles.monthHighlightValue, typography.cardTitle]}>{formatMoney(analytics.month.summary.balance)}</Text>
               </View>
-              <View style={styles.monthHighlightDivider} />
+              <View style={[styles.monthHighlightDivider, isCompactWidth && styles.monthHighlightDividerCompact]} />
               <View style={styles.monthHighlightItem}>
                 <Text style={[styles.monthHighlightLabel, typography.footnote]}>支出最高日</Text>
                 <Text style={[styles.monthHighlightValue, typography.bodyStrong]}>{analytics.month.highestExpenseDay.replace(/。$/, '')}</Text>
               </View>
             </View>
-            <Text style={[styles.monthComparisonText, typography.body]}>{analytics.month.comparison}</Text>
           </View>
-          <View style={styles.compactTwoColumn}>
-            <View style={styles.compactColumn}>
+          <View style={[styles.compactTwoColumn, isCompactWidth && styles.compactTwoColumnCompact]}>
+            <View style={[styles.compactColumn, isCompactWidth && styles.compactColumnCompact]}>
               {renderTopList({
                 title: '分类 Top',
                 emptyText: `${analytics.month.label}还没有支出分类数据`,
@@ -268,7 +340,7 @@ export function AnalyticsScreen({
                 typography,
               })}
             </View>
-            <View style={styles.compactColumn}>
+            <View style={[styles.compactColumn, isCompactWidth && styles.compactColumnCompact]}>
               {renderTopList({
                 title: '标签 Top',
                 emptyText: `${analytics.month.label}还没有标签数据`,
@@ -282,18 +354,18 @@ export function AnalyticsScreen({
 
       {activeSegment === 'year' ? (
         <>
-          {renderHighlightStrip({ items: analytics.year.highlights, typography })}
+          {renderHighlightStrip({ items: analytics.year.highlights, typography, compact: isCompactWidth })}
           <View style={styles.card}>
             <Text style={[styles.cardTitle, typography.cardTitle]}>年度趋势</Text>
             {analytics.year.months.length ? (
               <View style={styles.timelineList}>
-                {analytics.year.months.map((item) => (
-                  <View key={item.month} style={styles.yearRow}>
+                {analytics.year.months.map((item, index) => (
+                  <View key={item.month} style={[styles.yearRowCompact, index !== analytics.year.months.length - 1 && styles.categoryRowDivider]}>
                     <Text style={[styles.timelineLabel, typography.bodyStrong]}>{item.month}</Text>
-                    <View style={styles.yearMetrics}>
+                    <View style={styles.yearMetricsCompact}>
                       <Text style={[styles.yearMetricText, typography.footnote]}>收 {formatMoney(item.income)}</Text>
                       <Text style={[styles.yearMetricText, typography.footnote]}>支 {formatMoney(item.expense)}</Text>
-                      <Text style={[styles.yearMetricText, typography.captionStrong]}>余 {formatMoney(item.balance)}</Text>
+                      <Text style={[styles.yearMetricBalance, typography.captionStrong]}>余 {formatMoney(item.balance)}</Text>
                     </View>
                   </View>
                 ))}
@@ -301,7 +373,6 @@ export function AnalyticsScreen({
             ) : (
               <Text style={[styles.cardBody, typography.body]}>今年还没有足够的记账趋势数据</Text>
             )}
-            <Text style={[styles.cardBodySecondary, typography.body]}>{analytics.year.busiestMonth}</Text>
           </View>
           {renderTopList({
             title: '年度分类 Top',
@@ -319,54 +390,78 @@ export function AnalyticsScreen({
       ) : null}
 
       {activeSegment === 'calendar' ? (
-        <View style={styles.card}>
-          <View style={styles.listHeader}>
-            <Text style={[styles.cardTitle, typography.cardTitle]}>月度日历</Text>
-            <Text style={[styles.listHeaderHint, typography.footnote]}>{analytics.calendar.label}</Text>
+        <>
+          <View style={styles.calendarSummaryRow}>
+            <Text style={[styles.calendarMonthTitle, typography.sectionTitle]}>{analytics.month.label}</Text>
+            <Text style={[styles.calendarMonthSummary, typography.caption]}>{`收 ${formatMoney(analytics.month.summary.income)}  支 ${formatMoney(analytics.month.summary.expense)}`}</Text>
           </View>
-          <Text style={[styles.cardBody, typography.body]}>{analytics.calendar.highestExpenseDay}</Text>
-          <Text style={[styles.cardBodySecondary, typography.body]}>{selectedCalendarDate ? `当前选中 ${selectedCalendarDate.slice(5).replace('-', '/')}，可直接跳转看当天流水。` : '先看整个月，再按日期选择要查看的具体一天。'}</Text>
-          {analytics.calendar.days.length ? (
-            <>
-              <View style={styles.weekHeaderRow}>
-                {weekLabels.map((label) => (
-                  <View key={label} style={styles.weekHeaderCell}>
-                    <Text style={[styles.weekHeaderText, typography.footnote]}>{label}</Text>
+
+          <View style={styles.card}>
+            <View style={styles.weekHeaderRow}>
+              {weekLabels.map((label) => (
+                <View key={label} style={styles.weekHeaderCell}>
+                  <Text style={[styles.weekHeaderText, typography.footnote]}>{label}</Text>
+                </View>
+              ))}
+            </View>
+            <View style={styles.calendarGrid}>
+              {analytics.calendar.days.length
+                ? Array.from({ length: getCalendarLeadingSlots(analytics.calendar.days[0].date) }).map((_, index) => (
+                    <View key={`empty-${index}`} style={styles.calendarBlankCell} />
+                  ))
+                : null}
+              {analytics.calendar.days.map((day) => {
+                const selected = day.date === selectedCalendarDate
+                const isToday = day.date === new Date().toISOString().slice(0, 10)
+                const expenseText = day.expense > 0 ? `-${Math.round(day.expense)}` : ' '
+                const incomeText = day.income > 0 ? `+${Math.round(day.income)}` : ' '
+                return (
+                  <Pressable
+                    key={day.date}
+                    style={[
+                      styles.calendarCell,
+                      selected && styles.calendarCellSelected,
+                      day.intensity === 'high' && !selected && styles.calendarCellHigh,
+                      day.intensity === 'medium' && !selected && styles.calendarCellMedium,
+                    ]}
+                    onPress={() => setSelectedCalendarDate((current) => (current === day.date ? null : day.date))}
+                  >
+                    <Text style={[styles.calendarDay, typography.captionStrong, selected && styles.calendarDaySelected, isToday && !selected && styles.calendarDayToday]}>{day.label}</Text>
+                    <View style={styles.calendarAmounts}>
+                      <Text style={[styles.calendarAmountExpense, typography.footnote]}>{expenseText}</Text>
+                      <Text style={[styles.calendarAmountIncome, typography.footnote]}>{incomeText}</Text>
+                    </View>
+                  </Pressable>
+                )
+              })}
+            </View>
+          </View>
+
+          {selectedDayGroup ? (
+            <View style={styles.card}>
+              <View style={styles.listHeader}>
+                <Text style={[styles.cardTitle, typography.cardTitle]}>{formatCalendarSummaryDate(selectedDayGroup.date)}</Text>
+                <Text style={[styles.listHeaderHint, typography.footnote]}>{`收 ${formatPreciseMoney(selectedDayGroup.income)}  支 ${formatPreciseMoney(selectedDayGroup.expense)}`}</Text>
+              </View>
+              <View style={styles.dayLedgerList}>
+                {selectedDayGroup.items.map((item, index) => (
+                  <View key={item.id} style={[styles.dayLedgerItem, index !== selectedDayGroup.items.length - 1 && styles.categoryRowDivider]}>
+                    <View style={styles.dayLedgerCopy}>
+                      <Text style={[styles.dayLedgerCategory, typography.bodyStrong]}>{item.category}</Text>
+                      {item.note ? <Text style={[styles.dayLedgerNote, typography.caption]}>{item.note}</Text> : null}
+                    </View>
+                    <View style={styles.dayLedgerAmountWrap}>
+                      <Text style={[styles.dayLedgerAmount, typography.cardTitle, item.amount > 0 ? styles.metricIncome : styles.metricExpense]}>
+                        {item.amount > 0 ? '+' : '-'}{formatPreciseMoney(Math.abs(item.amount))}
+                      </Text>
+                      <Text style={[styles.dayLedgerTime, typography.footnote]}>{item.time}</Text>
+                    </View>
                   </View>
                 ))}
               </View>
-              <View style={styles.calendarGrid}>
-                {Array.from({ length: getCalendarLeadingSlots(analytics.calendar.days[0].date) }).map((_, index) => (
-                  <View key={`empty-${index}`} style={styles.calendarBlankCell} />
-                ))}
-                {analytics.calendar.days.map((day) => {
-                  const selected = day.date === selectedCalendarDate
-                  return (
-                    <Pressable
-                      key={day.date}
-                      style={[
-                        styles.calendarCell,
-                        day.intensity === 'high' && styles.calendarCellHigh,
-                        day.intensity === 'medium' && styles.calendarCellMedium,
-                        selected && styles.calendarCellSelected,
-                      ]}
-                      onPress={() => setSelectedCalendarDate((current) => (current === day.date ? null : day.date))}
-                    >
-                      <Text style={[styles.calendarDay, typography.captionStrong, selected && styles.calendarDaySelected]}>{day.label}</Text>
-                      <Text style={[styles.calendarAmount, typography.footnote, selected && styles.calendarAmountSelected]}>{day.expense ? formatMoney(day.expense) : '—'}</Text>
-                      <Text style={[styles.calendarMeta, typography.footnote, selected && styles.calendarMetaSelected]}>{day.weekday}</Text>
-                    </Pressable>
-                  )
-                })}
-              </View>
-            </>
-          ) : (
-            <Text style={[styles.cardBody, typography.body]}>这个月还没有日历统计数据</Text>
-          )}
-          <Pressable style={styles.calendarAction} onPress={() => onOpenLedger(selectedCalendarDate)}>
-            <Text style={[styles.calendarActionText, typography.captionStrong]}>{selectedCalendarDate ? '查看当天流水' : '查看当月流水'}</Text>
-          </Pressable>
-        </View>
+            </View>
+          ) : null}
+        </>
       ) : null}
     </ScrollView>
   )
@@ -377,13 +472,44 @@ const styles = StyleSheet.create({
   content: { paddingHorizontal: spacing.page, paddingTop: spacing.pageTop, paddingBottom: spacing.pageBottom, gap: spacing.gapLoose },
   title: { color: colors.textPrimary },
   subtitle: { color: colors.textSecondary },
-  hero: {
-    backgroundColor: '#111827',
-    borderRadius: radii.xl,
-    padding: spacing.card,
+  monthNav: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.gap,
+    paddingVertical: 10,
+    backgroundColor: 'rgba(255,255,255,0.68)',
+    borderRadius: radii.pill,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
   },
-  heroTitle: { color: '#FFFFFF' },
-  heroText: { color: 'rgba(255,255,255,0.76)', marginTop: 8 },
+  monthNavButton: {
+    width: 40,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: radii.pill,
+  },
+  monthNavButtonDisabled: {
+    opacity: 0.3,
+  },
+  monthNavArrow: {
+    color: colors.textPrimary,
+    fontSize: 22,
+  },
+  monthNavArrowDisabled: {
+    color: colors.textSecondary,
+  },
+  monthNavLabel: {
+    color: colors.textPrimary,
+    flex: 1,
+    textAlign: 'center',
+  },
+  heroCompact: {
+    gap: 6,
+  },
+  heroCompactLabel: { color: colors.textSecondary },
+  heroCompactText: { color: colors.textPrimary },
   metricRow: {
     flexDirection: 'row',
     gap: spacing.gap,
@@ -398,6 +524,8 @@ const styles = StyleSheet.create({
   },
   metricLabel: { color: colors.textSecondary },
   metricValue: { marginTop: 6, color: colors.textPrimary },
+  metricIncome: { color: colors.income },
+  metricExpense: { color: '#EF4444' },
   segmentWrap: {
     flexDirection: 'row',
     backgroundColor: 'rgba(255,255,255,0.72)',
@@ -406,7 +534,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.cardBorder,
   },
-  segment: { flex: 1, paddingVertical: 10, borderRadius: radii.pill, alignItems: 'center', justifyContent: 'center', minHeight: 42 },
+  segment: { flex: 1, paddingVertical: 10, borderRadius: radii.pill, alignItems: 'center', justifyContent: 'center', minHeight: 40 },
   segmentActive: { backgroundColor: '#FFFFFF' },
   segmentText: { color: colors.textSecondary },
   segmentTextActive: { color: colors.textPrimary },
@@ -426,29 +554,8 @@ const styles = StyleSheet.create({
   listHeaderHint: {
     color: colors.textSecondary,
   },
-  cardlessSection: {
-    gap: 12,
-  },
-  ledgerWrap: {
-    marginTop: 4,
-  },
-  calendarHint: {
-    color: colors.textSecondary,
-  },
   cardTitle: { color: colors.textPrimary },
   cardBody: { marginTop: 10, color: colors.textSecondary },
-  cardBodySecondary: { marginTop: 8, color: colors.textSecondary },
-  calendarAction: {
-    marginTop: 14,
-    alignSelf: 'flex-start',
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: radii.pill,
-    backgroundColor: colors.textPrimary,
-  },
-  calendarActionText: {
-    color: '#FFFFFF',
-  },
   categoryList: {
     marginTop: 12,
     gap: 4,
@@ -486,6 +593,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: spacing.gap,
   },
+  highlightStripCompact: {
+    flexWrap: 'wrap',
+  },
   highlightItem: {
     flex: 1,
     paddingVertical: 12,
@@ -495,6 +605,11 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.cardBorder,
     alignItems: 'center',
+  },
+  highlightItemCompact: {
+    width: '48%',
+    minWidth: '47%',
+    flexGrow: 0,
   },
   highlightValue: {
     color: colors.textPrimary,
@@ -506,21 +621,14 @@ const styles = StyleSheet.create({
   categoryShare: {
     color: colors.accent,
   },
-  timelineList: {
-    marginTop: 12,
-    gap: 10,
-  },
-  timelineRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    gap: spacing.gap,
-  },
   monthHighlightRow: {
     marginTop: 14,
     flexDirection: 'row',
     alignItems: 'stretch',
     gap: spacing.gap,
+  },
+  monthHighlightRowCompact: {
+    flexDirection: 'column',
   },
   monthHighlightItem: {
     flex: 1,
@@ -536,82 +644,108 @@ const styles = StyleSheet.create({
     width: 1,
     backgroundColor: colors.divider,
   },
-  monthComparisonText: {
-    marginTop: 14,
-    color: colors.textSecondary,
+  monthHighlightDividerCompact: {
+    width: '100%',
+    height: 1,
   },
   compactTwoColumn: {
     flexDirection: 'row',
     gap: spacing.gap,
   },
+  compactTwoColumnCompact: {
+    flexDirection: 'column',
+  },
   compactColumn: {
     flex: 1,
+  },
+  compactColumnCompact: {
+    width: '100%',
+  },
+  timelineList: {
+    marginTop: 12,
+    gap: 0,
+  },
+  yearRowCompact: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: spacing.gap,
+    paddingVertical: 10,
   },
   timelineLabel: {
     color: colors.textPrimary,
   },
-  timelineValue: {
-    color: colors.accent,
-  },
-  yearRow: {
-    gap: 6,
-    paddingVertical: 6,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.divider,
-  },
-  yearMetrics: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10,
+  yearMetricsCompact: {
+    alignItems: 'flex-end',
+    gap: 3,
   },
   yearMetricText: {
     color: colors.textSecondary,
   },
-  weekHeaderRow: {
-    marginTop: 14,
+  yearMetricBalance: {
+    color: colors.textPrimary,
+  },
+  calendarSummaryRow: {
     flexDirection: 'row',
-    gap: 8,
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: spacing.gap,
+  },
+  calendarMonthTitle: {
+    color: colors.textPrimary,
+  },
+  calendarMonthSummary: {
+    color: colors.textSecondary,
+  },
+  weekHeaderRow: {
+    flexDirection: 'row',
+    marginBottom: 8,
   },
   weekHeaderCell: {
-    flex: 1,
-    minWidth: 0,
+    width: calendarColumnWidth,
     alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 4,
   },
   weekHeaderText: {
     color: colors.textSecondary,
   },
   calendarGrid: {
-    marginTop: 10,
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 8,
   },
   calendarBlankCell: {
-    width: '12.57%',
-    aspectRatio: 0.88,
+    width: calendarColumnWidth,
+    aspectRatio: 0.9,
   },
   calendarCell: {
-    width: '12.57%',
-    aspectRatio: 0.88,
+    width: calendarColumnWidth,
+    aspectRatio: 0.9,
     minWidth: 0,
-    paddingVertical: 10,
-    paddingHorizontal: 6,
-    borderRadius: radii.lg,
-    backgroundColor: colors.accentSoft,
-    gap: 4,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  calendarCellMedium: {
-    backgroundColor: 'rgba(99,102,241,0.18)',
-  },
-  calendarCellHigh: {
-    backgroundColor: 'rgba(99,102,241,0.26)',
+    paddingVertical: 6,
+    paddingHorizontal: 4,
+    borderRadius: radii.sm,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: colors.divider,
+    alignItems: 'flex-start',
+    justifyContent: 'flex-start',
   },
   calendarCellSelected: {
-    borderWidth: 2,
     borderColor: colors.accent,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: 'rgba(238,242,255,0.42)',
+  },
+  calendarCellHigh: {
+    backgroundColor: 'rgba(254,226,226,0.45)',
+    borderColor: 'rgba(239,68,68,0.18)',
+  },
+  calendarCellMedium: {
+    backgroundColor: 'rgba(254,243,199,0.35)',
+    borderColor: 'rgba(245,158,11,0.14)',
+  },
+  calendarCellToday: {
+    borderColor: colors.accent,
+    borderWidth: 1.5,
   },
   calendarDay: {
     color: colors.textPrimary,
@@ -619,16 +753,50 @@ const styles = StyleSheet.create({
   calendarDaySelected: {
     color: colors.accent,
   },
-  calendarAmount: {
+  calendarDayToday: {
+    color: colors.accent,
+    fontWeight: '700',
+  },
+  calendarAmounts: {
+    marginTop: 2,
+    alignSelf: 'stretch',
+  },
+  calendarAmountExpense: {
+    color: '#EF4444',
+    lineHeight: 14,
+  },
+  calendarAmountIncome: {
+    color: colors.income,
+    lineHeight: 14,
+  },
+  dayLedgerList: {
+    marginTop: 12,
+  },
+  dayLedgerItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: spacing.gap,
+    paddingVertical: 12,
+  },
+  dayLedgerCopy: {
+    flex: 1,
+    gap: 4,
+  },
+  dayLedgerCategory: {
     color: colors.textPrimary,
   },
-  calendarAmountSelected: {
-    color: colors.accent,
-  },
-  calendarMeta: {
+  dayLedgerNote: {
     color: colors.textSecondary,
   },
-  calendarMetaSelected: {
+  dayLedgerAmountWrap: {
+    alignItems: 'flex-end',
+    gap: 4,
+  },
+  dayLedgerAmount: {
     color: colors.textPrimary,
+  },
+  dayLedgerTime: {
+    color: colors.textSecondary,
   },
 })

@@ -5,6 +5,7 @@ export type StoredGoal = {
   id: string
   name: string
   target: number
+  targetDate?: string
   createdAt: string
 }
 
@@ -147,7 +148,7 @@ export const repository = {
     return goal
   },
 
-  async updateGoal(goalId: string, updates: Pick<StoredGoal, 'name' | 'target'>) {
+  async updateGoal(goalId: string, updates: Pick<StoredGoal, 'name' | 'target' | 'targetDate'>) {
     const goals = await loadGoals()
     const nextGoals = goals.map((goal) =>
       goal.id === goalId
@@ -159,6 +160,20 @@ export const repository = {
     )
     await saveGoals(nextGoals)
     return nextGoals.find((goal) => goal.id === goalId) ?? null
+  },
+
+  async removeBill(billId: string) {
+    const bills = await loadBills()
+    await saveBills(bills.filter((bill) => bill.id !== billId))
+  },
+
+  async updateBill(billId: string, updates: Partial<Pick<Bill, 'type' | 'amount' | 'categoryId' | 'tagIds' | 'note'>>) {
+    const bills = await loadBills()
+    const nextBills = bills.map((bill) =>
+      bill.id === billId ? { ...bill, ...updates } : bill,
+    )
+    await saveBills(nextBills)
+    return nextBills.find((bill) => bill.id === billId) ?? null
   },
 
   async removeGoal(goalId: string) {

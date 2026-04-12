@@ -1,7 +1,17 @@
-import React from 'react'
-import { StyleSheet, Text, View } from 'react-native'
+import React, { useRef, useState } from 'react'
+import { Animated, Dimensions, PanResponder, Pressable, StyleSheet, Text, View } from 'react-native'
 import { useUIPreferences } from '../hooks/use-ui-preferences'
 import { colors, radii, shadows, spacing } from '../theme/tokens'
+
+type LedgerItem = {
+  id: string
+  category: string
+  note: string
+  amount: number
+  time: string
+  tags: string[]
+  source: 'manual' | 'voice' | 'chat' | 'import'
+}
 
 type LedgerGroup = {
   key: string
@@ -9,15 +19,7 @@ type LedgerGroup = {
   weekday: string
   income: number
   expense: number
-  items: Array<{
-    id: string
-    category: string
-    note: string
-    amount: number
-    time: string
-    tags: string[]
-    source: 'manual' | 'voice' | 'chat' | 'import'
-  }>
+  items: LedgerItem[]
 }
 
 function formatDateLabel(date: string) {
@@ -46,7 +48,139 @@ function formatSourceLabel(source: 'manual' | 'voice' | 'chat' | 'import') {
   return '手动'
 }
 
-export function LedgerGroups({ groups }: { groups: LedgerGroup[] }) {
+const { width: SCREEN_WIDTH } = Dimensions.get('window')
+const SWIPE_THRESHOLD = 72
+const DELETE_BTN_WIDTH = 80
+
+function SwipeableRow({
+  item,
+  index,
+  totalItems,
+  onPress,
+  onDelete,
+}: {
+  item: LedgerItem
+  index: number
+  totalItems: number
+  onPress: () => void
+  onDelete: () => void
+}) {
+  const { typography } = useUIPreferences()
+  const translateX = useRef(new Animated.Value(0)).current
+  const [swiped, setSwiped] = useState(false)
+
+  function handleSwipe(value: number) {
+    if (value < -SWIPE_THRESHOLD) {
+      Animated.spring(translateX, {
+        toValue: -DELETE_BTN_WIDTH,
+        useNativeDriver: true,
+      }).start()
+      setSwiped(true)
+    } else {
+      Animated.spring(translateX, {
+        toValue: 0,
+        useNativeDriver: true,
+      }).start()
+      setSwiped(false)
+    }
+  }
+
+  function resetSwipe() {
+    Animated.spring(translateX, {
+      toValue: 0,
+      useNativeDriver: true,
+    }).start()
+    setSwiped(false)
+  }
+
+  function handleDelete() {
+    resetSwipe()
+    onDelete()
+  }
+
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => false,
+      onMoveShouldSetPanResponder: (_: any, gestureState: { dx: number; dy: number }) => {
+        return Math.abs(gestureState.dx) > Math.abs(gestureState.dy) && Math.abs(gestureState.dx) > 10
+      },
+      onPanResponderMove: (_: any, gestureState: { dx: number }) => {
+        if (gestureState.dx < 0) {
+          translateX.setValue(Math.max(gestureState.dx, -DELETE_BTN_WIDTH))
+        } else if (swiped && gestureState.dx > 0) {
+          translateX.setValue(Math.max(-DELETE_BTN_WIDTH + gestureState.dx, -DELETE_BTN_WIDTH))
+        }
+      },
+      onPanResponderRelease: (_: any, gestureState: { dx: number }) => {
+        if (swiped && gestureState.dx > SWIPE_THRESHOLD / 2) {
+          resetSwipe()
+        } else {
+          handleSwipe(gestureState.dx)
+        }
+      },
+    }),
+  ).current
+
+  return (
+    <View style={styles.swipeContainer}>
+      <Animated.View
+        style={[
+          styles.swipeContent,
+          {
+            transform: [{ translateX }],
+          },
+        ]}
+        {...panResponder.panHandlers}
+      >
+        <Pressable
+          style={[styles.item, index !== totalItems - 1 && styles.itemBorder]}
+          onPress={() => {
+            if (swiped) {
+              resetSwipe()
+            } else {
+              onPress()
+            }
+          }}
+        >
+          <View style={styles.itemLeft}>
+            <Text style={[styles.category, typography.cardTitle]} numberOfLines={1}>{item.category}</Text>
+            <Text style={[styles.note, typography.caption]} numberOfLines={2}>{item.note}</Text>
+            {item.tags.length ? (
+              <View style={styles.tagRow}>
+                {item.tags.slice(0, 2).map((tag) => (
+                  <View key={tag} style={styles.tagChip}>
+                    <Text style={[styles.tagText, typography.footnote]}>#{tag}</Text>
+                  </View>
+                ))}
+              </View>
+            ) : null}
+          </View>
+          <View style={styles.itemRight}>
+            <Text style={[styles.amount, typography.cardTitle, item.amount > 0 && styles.amountIncome]}>
+              {item.amount > 0 ? '+' : '-'}¥{Math.abs(item.amount)}
+            </Text>
+            <Text style={[styles.time, typography.footnote]}>{item.time} · {formatSourceLabel(item.source)}</Text>
+          </View>
+        </Pressable>
+      </Animated.View>
+      {swiped ? (
+        <Pressable style={styles.deleteButton} onPress={handleDelete}>
+          <Text style={styles.deleteText}>删除</Text>
+        </Pressable>
+      ) : null}
+    </View>
+  )
+}
+
+export function LedgerGroups({
+  groups,
+  onItemPress,
+  onItemDelete,
+}: {
+  groups: LedgerGroup[]
+  onItemPress?: (item: LedgerItem) => void
+  onItemDelete?: (item: LedgerItem) => void
+}) {
   const { typography } = useUIPreferences()
 
   return (
@@ -65,27 +199,14 @@ export function LedgerGroups({ groups }: { groups: LedgerGroup[] }) {
           </View>
           <View style={styles.divider} />
           {group.items.map((item, index) => (
-            <View key={item.id} style={[styles.item, index !== group.items.length - 1 && styles.itemBorder]}>
-              <View style={styles.itemLeft}>
-                <Text style={[styles.category, typography.cardTitle]} numberOfLines={1}>{item.category}</Text>
-                <Text style={[styles.note, typography.caption]} numberOfLines={2}>{item.note}</Text>
-                {item.tags.length ? (
-                  <View style={styles.tagRow}>
-                    {item.tags.slice(0, 2).map((tag) => (
-                      <View key={tag} style={styles.tagChip}>
-                        <Text style={[styles.tagText, typography.footnote]}>#{tag}</Text>
-                      </View>
-                    ))}
-                  </View>
-                ) : null}
-              </View>
-              <View style={styles.itemRight}>
-                <Text style={[styles.amount, typography.cardTitle, item.amount > 0 && styles.amountIncome]}>
-                  {item.amount > 0 ? '+' : '-'}¥{Math.abs(item.amount)}
-                </Text>
-                <Text style={[styles.time, typography.footnote]}>{item.time} · {formatSourceLabel(item.source)}</Text>
-              </View>
-            </View>
+            <SwipeableRow
+              key={item.id}
+              item={item}
+              index={index}
+              totalItems={group.items.length}
+              onPress={() => onItemPress?.(item)}
+              onDelete={() => onItemDelete?.(item)}
+            />
           ))}
         </View>
       ))}
@@ -135,12 +256,19 @@ const styles = StyleSheet.create({
     backgroundColor: colors.divider,
     marginVertical: 14,
   },
+  swipeContainer: {
+    position: 'relative',
+  },
+  swipeContent: {
+    backgroundColor: 'transparent',
+  },
   item: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     gap: spacing.gap,
     paddingVertical: 12,
+    backgroundColor: 'transparent',
   },
   itemBorder: {
     borderBottomWidth: 1,
@@ -185,5 +313,20 @@ const styles = StyleSheet.create({
   },
   time: {
     color: colors.textSecondary,
+  },
+  deleteButton: {
+    position: 'absolute',
+    right: 0,
+    top: 0,
+    bottom: 0,
+    width: DELETE_BTN_WIDTH,
+    backgroundColor: '#EF4444',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: radii.md,
+  },
+  deleteText: {
+    color: '#FFFFFF',
+    fontWeight: '600',
   },
 })

@@ -64,58 +64,58 @@ function scaleFontSize(size: number, scale: number) {
 export function createTypography(scale = 1) {
   return {
     hero: {
-      fontSize: scaleFontSize(34, scale),
-      lineHeight: scaleFontSize(40, scale),
-      fontWeight: '700' as const,
-    },
-    title: {
       fontSize: scaleFontSize(28, scale),
       lineHeight: scaleFontSize(34, scale),
       fontWeight: '700' as const,
     },
+    title: {
+      fontSize: scaleFontSize(24, scale),
+      lineHeight: scaleFontSize(30, scale),
+      fontWeight: '700' as const,
+    },
     sectionTitle: {
-      fontSize: scaleFontSize(18, scale),
-      lineHeight: scaleFontSize(24, scale),
+      fontSize: scaleFontSize(16, scale),
+      lineHeight: scaleFontSize(22, scale),
       fontWeight: '700' as const,
     },
     cardTitle: {
-      fontSize: scaleFontSize(16, scale),
-      lineHeight: scaleFontSize(22, scale),
+      fontSize: scaleFontSize(15, scale),
+      lineHeight: scaleFontSize(20, scale),
       fontWeight: '600' as const,
     },
     body: {
-      fontSize: scaleFontSize(15, scale),
-      lineHeight: scaleFontSize(21, scale),
+      fontSize: scaleFontSize(14, scale),
+      lineHeight: scaleFontSize(20, scale),
       fontWeight: '400' as const,
     },
     bodyStrong: {
-      fontSize: scaleFontSize(15, scale),
-      lineHeight: scaleFontSize(21, scale),
+      fontSize: scaleFontSize(14, scale),
+      lineHeight: scaleFontSize(20, scale),
       fontWeight: '600' as const,
     },
     caption: {
-      fontSize: scaleFontSize(13, scale),
-      lineHeight: scaleFontSize(18, scale),
+      fontSize: scaleFontSize(12, scale),
+      lineHeight: scaleFontSize(17, scale),
       fontWeight: '400' as const,
     },
     captionStrong: {
-      fontSize: scaleFontSize(13, scale),
-      lineHeight: scaleFontSize(18, scale),
+      fontSize: scaleFontSize(12, scale),
+      lineHeight: scaleFontSize(17, scale),
       fontWeight: '600' as const,
     },
     footnote: {
-      fontSize: scaleFontSize(12, scale),
-      lineHeight: scaleFontSize(16, scale),
+      fontSize: scaleFontSize(11, scale),
+      lineHeight: scaleFontSize(15, scale),
       fontWeight: '400' as const,
     },
     amountLarge: {
-      fontSize: scaleFontSize(34, scale),
-      lineHeight: scaleFontSize(40, scale),
+      fontSize: scaleFontSize(28, scale),
+      lineHeight: scaleFontSize(34, scale),
       fontWeight: '700' as const,
     },
     amountMedium: {
-      fontSize: scaleFontSize(22, scale),
-      lineHeight: scaleFontSize(28, scale),
+      fontSize: scaleFontSize(20, scale),
+      lineHeight: scaleFontSize(26, scale),
       fontWeight: '700' as const,
     },
     tabLabel: {

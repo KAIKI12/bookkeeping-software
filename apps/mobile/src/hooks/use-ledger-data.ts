@@ -109,12 +109,14 @@ type GoalSummary = {
   name: string
   current: number
   target: number
+  targetDate?: string
   eta: string
 }
 
 type GoalDraft = {
   name: string
   target: number
+  targetDate?: string
 }
 
 type GoalSuggestion = {
@@ -488,12 +490,26 @@ function buildCalendarAnalytics(monthBills: Bill[], monthLabel: string, monthKey
   }
 }
 
-function formatMonths(months: number) {
-  if (months <= 1) {
-    return '约 1 个月'
-  }
+function getMonthDifference(from: Date, to: Date) {
+  return (to.getFullYear() - from.getFullYear()) * 12 + (to.getMonth() - from.getMonth())
+}
 
-  return `约 ${months} 个月`
+function formatTargetMonthLabel(targetDate: string) {
+  const date = new Date(`${targetDate}T00:00:00`)
+  return `${date.getMonth() + 1} 月`
+}
+
+function formatGoalEtaText(remaining: number, monthlySaving: number) {
+  const estimatedMonths = Math.max(Math.ceil(remaining / Math.max(monthlySaving, 1)), 1)
+  const estimatedDate = new Date()
+  estimatedDate.setMonth(estimatedDate.getMonth() + estimatedMonths)
+  return `还差 ¥${remaining.toLocaleString()} · 预计 ${formatTargetMonthLabel(estimatedDate.toISOString().slice(0, 10))}攒够`
+}
+
+function formatGoalDeadlineText(remaining: number, targetDate: string) {
+  const remainingMonths = Math.max(getMonthDifference(new Date(), new Date(`${targetDate}T00:00:00`)), 1)
+  const requiredMonthlySaving = Math.ceil(remaining / remainingMonths)
+  return `还差 ¥${remaining.toLocaleString()} · 每月至少存 ¥${requiredMonthlySaving.toLocaleString()} 可在 ${formatTargetMonthLabel(targetDate)}达成`
 }
 
 function buildGoalSummaries(
@@ -507,13 +523,18 @@ function buildGoalSummaries(
   const goals = storedGoals.map((goal) => {
     const currentAmount = Math.max(Math.round(current.balance * 0.65), 0)
     const remaining = Math.max(goal.target - currentAmount, 0)
-    const eta = remaining === 0 ? '已达成' : formatMonths(Math.ceil(remaining / monthlySaving))
+    const eta = remaining === 0
+      ? '这个目标已经攒够了。'
+      : goal.targetDate
+        ? formatGoalDeadlineText(remaining, goal.targetDate)
+        : formatGoalEtaText(remaining, monthlySaving)
 
     return {
       id: goal.id,
       name: goal.name,
       current: currentAmount,
       target: goal.target,
+      targetDate: goal.targetDate,
       eta,
     }
   })
@@ -640,11 +661,28 @@ export function useLedgerData() {
     await refresh()
   }, [refresh])
 
+  const updateBill = useCallback(async (billId: string, updates: { type: 'income' | 'expense'; amount: number; category: string; note: string; tags: string[] }) => {
+    await repository.updateBill(billId, {
+      type: updates.type,
+      amount: updates.amount,
+      categoryId: updates.category,
+      note: updates.note,
+      tagIds: updates.tags,
+    })
+    await refresh()
+  }, [refresh])
+
+  const removeBill = useCallback(async (billId: string) => {
+    await repository.removeBill(billId)
+    await refresh()
+  }, [refresh])
+
   const addGoal = useCallback(async (input: GoalDraft) => {
     await repository.createGoal({
       id: `goal-${Date.now()}`,
       name: input.name,
       target: input.target,
+      targetDate: input.targetDate,
       createdAt: new Date().toISOString(),
     })
     await refresh()
@@ -660,6 +698,28 @@ export function useLedgerData() {
     await refresh()
   }, [refresh])
 
+  const getMonthAnalytics = useCallback(
+    (monthKey: string) => {
+      const monthLabel = getMonthLabel(monthKey)
+      const prevKey = getPreviousMonthKey(monthKey)
+      const monthBillsForMonth = bills.filter((bill) => bill.occurredAt.startsWith(monthKey))
+      const prevBills = bills.filter((bill) => bill.occurredAt.startsWith(prevKey))
+      const yearKey = monthKey.slice(0, 4)
+      const yearBillsForMonth = bills.filter((bill) => bill.occurredAt.startsWith(yearKey))
+
+      return {
+        analytics: {
+          overview: buildOverviewAnalytics(monthBillsForMonth, prevBills, monthLabel),
+          month: buildMonthAnalytics(monthBillsForMonth, prevBills, monthLabel),
+          year: buildYearAnalytics(yearBillsForMonth, yearKey),
+          calendar: buildCalendarAnalytics(monthBillsForMonth, monthLabel, monthKey),
+        },
+        dayGroups: groupBillsByDay(monthBillsForMonth),
+      }
+    },
+    [bills],
+  )
+
   return {
     bills,
     groups,
@@ -673,9 +733,12 @@ export function useLedgerData() {
     latestBillPreset,
     addManualBill,
     importBills,
+    updateBill,
+    removeBill,
     addGoal,
     updateGoal,
     removeGoal,
+    getMonthAnalytics,
     refresh,
   }
 }

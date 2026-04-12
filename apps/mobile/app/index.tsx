@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react'
 import { SafeAreaView, StatusBar, StyleSheet, View } from 'react-native'
 import { AnalyticsScreen } from '../src/components/analytics-screen'
-import { ComposerSheet } from '../src/components/composer-sheet'
+import { ComposerScreen } from '../src/components/composer-screen'
 import { GoalsScreen } from '../src/components/goals-screen'
 import { LedgerScreen } from '../src/components/ledger-screen'
 import { MineScreen } from '../src/components/mine-screen'
@@ -13,14 +13,28 @@ import { useLedgerData } from '../src/hooks/use-ledger-data'
 import { colors } from '../src/theme/tokens'
 
 type TabKey = 'ledger' | 'analytics' | 'goals' | 'mine'
+type SurfaceKey = 'tabs' | 'composer'
+
+function getCurrentMonthKey() {
+  const now = new Date()
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+}
 
 function AppShell() {
   const [activeTab, setActiveTab] = useState<TabKey>('ledger')
-  const [composerVisible, setComposerVisible] = useState(false)
+  const [activeSurface, setActiveSurface] = useState<SurfaceKey>('tabs')
+  const [composeEntryTab, setComposeEntryTab] = useState<TabKey>('ledger')
   const [ledgerDateFilter, setLedgerDateFilter] = useState<string | null>(null)
+  const [analyticsMonth, setAnalyticsMonth] = useState<string | null>(null)
   const ledger = useLedgerData()
   const { config: aiConfig } = useAIConfig()
   const ledgerSettings = useLedgerSettings()
+
+  const effectiveAnalyticsMonth = analyticsMonth ?? getCurrentMonthKey()
+  const analyticsMonthData = useMemo(
+    () => ledger.getMonthAnalytics(effectiveAnalyticsMonth),
+    [ledger, effectiveAnalyticsMonth],
+  )
 
   const filteredLedgerGroups = useMemo(() => {
     if (!ledgerDateFilter) {
@@ -49,15 +63,38 @@ function AppShell() {
   const ledgerDayLabel = ledgerDateFilter?.length === 10 ? ledgerDateFilter.replace(/^([0-9]{4})-([0-9]{2})-([0-9]{2})$/, '$1年$2月$3日') : null
 
   const content = useMemo(() => {
+    if (activeSurface === 'composer') {
+      return (
+        <ComposerScreen
+          onBack={() => {
+            setActiveTab(composeEntryTab)
+            setActiveSurface('tabs')
+          }}
+          onSubmit={async (input) => {
+            await ledger.addManualBill(input)
+            setActiveTab('ledger')
+            setActiveSurface('tabs')
+          }}
+          aiConfig={aiConfig}
+          categories={ledgerSettings.categories}
+          tags={ledgerSettings.tags}
+          addCategory={ledgerSettings.addCategory}
+          addTag={ledgerSettings.addTag}
+          recentCategories={ledger.recentCategoryChoices}
+          recentTags={ledger.recentTagChoices}
+          latestPreset={ledger.latestBillPreset}
+        />
+      )
+    }
+
     switch (activeTab) {
       case 'analytics':
         return (
           <AnalyticsScreen
-            analytics={ledger.analytics}
-            onOpenLedger={(date) => {
-              setLedgerDateFilter(date ? date : ledger.analytics.month.label.replace('年', '-').replace('月', ''))
-              setActiveTab('ledger')
-            }}
+            analytics={analyticsMonthData.analytics}
+            dayGroups={analyticsMonthData.dayGroups}
+            viewMonth={effectiveAnalyticsMonth}
+            onViewMonthChange={setAnalyticsMonth}
           />
         )
       case 'goals':
@@ -74,15 +111,38 @@ function AppShell() {
         return <MineScreen {...ledgerSettings} importBills={ledger.importBills} />
       case 'ledger':
       default:
-        return <LedgerScreen summary={filteredLedgerSummary} groups={filteredLedgerGroups} monthLabel={ledgerMonthLabel} dayLabel={ledgerDayLabel} />
+        return (
+          <LedgerScreen
+            summary={filteredLedgerSummary}
+            groups={filteredLedgerGroups}
+            monthLabel={ledgerMonthLabel}
+            dayLabel={ledgerDayLabel}
+            categories={ledgerSettings.categories}
+            updateBill={ledger.updateBill}
+            removeBill={ledger.removeBill}
+          />
+        )
     }
   }, [
+    activeSurface,
     activeTab,
+    aiConfig,
+    analyticsMonthData.analytics,
+    analyticsMonthData.dayGroups,
+    composeEntryTab,
+    effectiveAnalyticsMonth,
     filteredLedgerGroups,
     filteredLedgerSummary,
-    ledger.analytics,
+    ledger.addGoal,
+    ledger.addManualBill,
     ledger.goalSuggestion,
     ledger.goals,
+    ledger.importBills,
+    ledger.latestBillPreset,
+    ledger.recentCategoryChoices,
+    ledger.recentTagChoices,
+    ledger.updateBill,
+    ledger.removeBill,
     ledgerMonthLabel,
     ledgerDayLabel,
     ledgerSettings,
@@ -94,24 +154,16 @@ function AppShell() {
       <View style={styles.backgroundGlowTop} />
       <View style={styles.backgroundGlowBottom} />
       <View style={styles.container}>{content}</View>
-      <TabBar
-        activeTab={activeTab}
-        onTabChange={setActiveTab}
-        onOpenComposer={() => setComposerVisible(true)}
-      />
-      <ComposerSheet
-        visible={composerVisible}
-        onClose={() => setComposerVisible(false)}
-        onSubmit={ledger.addManualBill}
-        aiConfig={aiConfig}
-        categories={ledgerSettings.categories}
-        tags={ledgerSettings.tags}
-        addCategory={ledgerSettings.addCategory}
-        addTag={ledgerSettings.addTag}
-        recentCategories={ledger.recentCategoryChoices}
-        recentTags={ledger.recentTagChoices}
-        latestPreset={ledger.latestBillPreset}
-      />
+      {activeSurface === 'tabs' ? (
+        <TabBar
+          activeTab={activeTab}
+          onTabChange={setActiveTab}
+          onOpenComposer={() => {
+            setComposeEntryTab(activeTab)
+            setActiveSurface('composer')
+          }}
+        />
+      ) : null}
     </SafeAreaView>
   )
 }

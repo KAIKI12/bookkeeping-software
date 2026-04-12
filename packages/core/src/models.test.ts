@@ -18,7 +18,7 @@ describe('models', () => {
     expect(bill.source).toBe('manual')
   })
 
-  it('accepts a valid saving goal', () => {
+  it('accepts a valid saving goal with optional target date', () => {
     const goal = savingGoalSchema.parse({
       id: 'goal-1',
       name: '买电脑',
@@ -28,6 +28,18 @@ describe('models', () => {
     })
 
     expect(goal.targetAmount).toBe(8000)
+    expect(goal.targetDate).toBe('2026-12-31')
+  })
+
+  it('accepts a valid saving goal without target date', () => {
+    const goal = savingGoalSchema.parse({
+      id: 'goal-2',
+      name: '旅行基金',
+      targetAmount: 5000,
+      currentAmount: 800,
+    })
+
+    expect(goal.targetDate).toBeUndefined()
   })
 
   it('accepts category tag and import record', () => {
